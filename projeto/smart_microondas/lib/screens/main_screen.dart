@@ -7,6 +7,7 @@ import '../widgets/status_card.dart';
 import '../widgets/timer_widget.dart';
 import 'recipe_list_screen.dart';
 import 'connection_screen.dart';
+import 'debug_screen.dart';
 
 class MainScreen extends StatefulWidget {
   @override

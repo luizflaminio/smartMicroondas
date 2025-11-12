@@ -10,7 +10,7 @@ class BLEConstants {
   
   // Timeouts
   static const Duration scanTimeout = Duration(seconds: 5);
-  static const Duration connectionTimeout = Duration(seconds: 10);
+  static const Duration connectionTimeout = Duration(seconds: 30);
 }
 
 class AppConstants {

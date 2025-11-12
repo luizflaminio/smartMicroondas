@@ -1,6 +1,7 @@
 // lib/screens/connection_screen.dart
 import 'package:flutter/material.dart';
 import '../services/microwave_service.dart';
+import 'debug_screen.dart';
 
 class ConnectionScreen extends StatefulWidget {
   final VoidCallback onConnected;
@@ -32,7 +33,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     bool hasPermissions = await _service.requestPermissions();
     if (!hasPermissions) {
       setState(() {
-        _statusMessage = 'Permissões necessárias não concedidas';
+        _statusMessage = 'Permissoes necessarias nao concedidas';
       });
     }
   }
@@ -56,6 +57,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           _statusMessage = '${_devices.length} dispositivo(s) encontrado(s)';
         }
       });
+      
+      // Mostrar lista automaticamente se encontrou dispositivos
+      if (_devices.isNotEmpty) {
+        _showDeviceListDialog();
+      }
     } catch (e) {
       setState(() {
         _isScanning = false;
@@ -78,11 +84,16 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       } else {
         setState(() {
           _isConnecting = false;
-          _statusMessage = 'Falha na conexão';
+          _statusMessage = 'Microondas nao encontrado. Tente buscar manualmente.';
         });
         
-        // Mostrar lista de dispositivos
-        _showDeviceListDialog();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Microondas nao encontrado. Busque manualmente.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
       }
     } catch (e) {
       setState(() {
@@ -97,62 +108,75 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     
     setState(() {
       _isConnecting = true;
-      _statusMessage = 'Conectando...';
+      _statusMessage = 'Conectando ao dispositivo...';
     });
 
-    bool success = await _service.connectToDevice(device);
-    
-    if (success) {
-      widget.onConnected();
-    } else {
+    try {
+      print('Tentando conectar a: ${device.platformName}');
+      bool success = await _service.connectToDevice(device);
+      
+      if (success) {
+        print('Conexao bem-sucedida!');
+        widget.onConnected();
+      } else {
+        print('Falha na conexao');
+        setState(() {
+          _isConnecting = false;
+          _statusMessage = 'Falha na conexao';
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Nao foi possivel conectar'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Erro ao conectar: $e');
       setState(() {
         _isConnecting = false;
-        _statusMessage = 'Falha na conexão';
+        _statusMessage = 'Erro: $e';
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Não foi possível conectar ao dispositivo'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
-  void _showDeviceListDialog() async {
-    // Primeiro faz o scan
-    await _startScan();
-    
-    if (!mounted) return;
+  void _showDeviceListDialog() {
+    if (_devices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Nenhum dispositivo encontrado. Faca um scan primeiro.'),
+        ),
+      );
+      return;
+    }
     
     showDialog(
       context: context,
+      barrierDismissible: true,
       builder: (context) => AlertDialog(
         title: Text('Selecionar Dispositivo'),
         content: Container(
           width: double.maxFinite,
-          child: _devices.isEmpty
-              ? Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('Nenhum dispositivo encontrado'),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _devices.length,
-                  itemBuilder: (context, index) {
-                    dynamic device = _devices[index];
-                    String deviceName = device.name.isEmpty
-                        ? 'Dispositivo Desconhecido'
-                        : device.name;
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _devices.length,
+            itemBuilder: (context, index) {
+              dynamic device = _devices[index];
+              String deviceName = device.platformName.isEmpty
+                  ? 'Dispositivo Desconhecido'
+                  : device.platformName;
 
-                    return ListTile(
-                      leading: Icon(Icons.bluetooth, color: Colors.blue),
-                      title: Text(deviceName),
-                      subtitle: Text(device.id.toString()),
-                      onTap: () => _connectToDevice(device),
-                    );
-                  },
-                ),
+              return ListTile(
+                leading: Icon(Icons.bluetooth, color: Colors.blue),
+                title: Text(deviceName),
+                subtitle: Text(device.remoteId.toString()),
+                onTap: () => _connectToDevice(device),
+              );
+            },
+          ),
         ),
         actions: [
           TextButton(
@@ -203,7 +227,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               ),
               SizedBox(height: 8),
               Text(
-                'Procurando por: Smart_Microondas_ESP32',
+                'Procurando: Smart_Microondas_ESP32',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[500],
@@ -214,10 +238,22 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               _buildConnectButton(),
               SizedBox(height: 16),
               TextButton.icon(
-                onPressed: _showDeviceListDialog,
-                icon: Icon(Icons.list),
-                label: Text('Selecionar Dispositivo Manualmente'),
+                onPressed: (_isScanning || _isConnecting) ? null : _startScan,
+                icon: Icon(Icons.search),
+                label: Text('Procurar Dispositivos'),
               ),
+              if (_devices.isNotEmpty) ...[
+                SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: _showDeviceListDialog,
+                  icon: Icon(Icons.list),
+                  label: Text('Ver ${_devices.length} Dispositivo(s)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -260,7 +296,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           ? 'Conectando...'
           : _isScanning
               ? 'Procurando...'
-              : 'Conectar'),
+              : 'Conectar Automatico'),
       style: ElevatedButton.styleFrom(
         padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
         textStyle: TextStyle(fontSize: 16),

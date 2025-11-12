@@ -1,0 +1,5 @@
+vcc - 3.3
+gnd
+SCK  18
+cs 19
+so 5

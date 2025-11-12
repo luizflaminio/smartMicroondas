@@ -63,23 +63,37 @@ class BluetoothService {
 
   // Scan for devices
   Future<List<BluetoothDevice>> scanDevices({
-    Duration timeout = const Duration(seconds: 5),
-  }) async {
-    List<BluetoothDevice> devices = [];
-    
-    await FlutterBluePlus.startScan(timeout: timeout);
-    
-    await for (var results in FlutterBluePlus.scanResults) {
-      for (var result in results) {
-        if (!devices.any((d) => d.id == result.device.id)) {
-          devices.add(result.device);
-        }
-      }
-    }
-    
-    await FlutterBluePlus.stopScan();
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  List<BluetoothDevice> devices = [];
+
+  // Garantir que o Bluetooth está ligado antes do scan
+  if (!(await FlutterBluePlus.isOn)) {
+    print('⚠️ Bluetooth está desligado');
     return devices;
   }
+
+  // Escuta os resultados do scan antes de iniciar
+  final subscription = FlutterBluePlus.scanResults.listen((results) {
+    for (ScanResult r in results) {
+      if (!devices.any((d) => d.id == r.device.id)) {
+        devices.add(r.device);
+      }
+    }
+  });
+
+  print('🔍 Iniciando busca BLE por ${timeout.inSeconds}s...');
+  await FlutterBluePlus.startScan(timeout: timeout);
+
+  // Espera o tempo de scan
+  await Future.delayed(timeout);
+
+  await FlutterBluePlus.stopScan();
+  await subscription.cancel();
+
+  print('📡 Scan finalizado, ${devices.length} dispositivo(s) encontrado(s).');
+  return devices;
+}
 
   // Connect to specific device
   Future<bool> connectToDevice(BluetoothDevice device) async {
