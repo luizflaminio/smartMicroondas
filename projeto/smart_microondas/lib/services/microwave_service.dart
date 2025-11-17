@@ -43,14 +43,21 @@ class MicrowaveService {
       ));
     });
 
-    // Listen to temperature
+    // Listen to temperature changes
     _bluetooth.temperatureStream.listen((temperature) {
       _updateState(_currentState.copyWith(
         currentTemperature: temperature,
       ));
     });
 
-    // Listen to time
+    // Listen to calculated power changes
+    _bluetooth.powerStream.listen((power) {
+      _updateState(_currentState.copyWith(
+        calculatedPower: power,
+      ));
+    });
+
+    // Listen to time changes
     _bluetooth.timeStream.listen((time) {
       _updateState(_currentState.copyWith(
         remainingTime: time,
@@ -164,7 +171,8 @@ class MicrowaveService {
   // Getters delegating to bluetooth service
   bool get isConnected => _bluetooth.isConnected;
   bool get isRunning => _bluetooth.isRunning;
-  int get currentTemperature => _bluetooth.currentTemperature;
+  double get currentTemperature => _bluetooth.currentTemperature;
+  int get calculatedPower => _bluetooth.calculatedPower;
   Recipe? get currentRecipe => _bluetooth.currentRecipe;
   int get remainingTime => _bluetooth.remainingTime;
   dynamic get connectedDevice => _bluetooth.connectedDevice;

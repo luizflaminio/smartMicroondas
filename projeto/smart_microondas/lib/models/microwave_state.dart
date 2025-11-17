@@ -14,7 +14,8 @@ class MicrowaveState {
   final MicrowaveStatus status;
   final bool isConnected;
   final bool isRunning;
-  final int currentTemperature;
+  final double currentTemperature; // Mudado para double
+  final int calculatedPower; // Nova propriedade - potência calculada em Watts
   final int remainingTime;
   final Recipe? currentRecipe;
   final String? errorMessage;
@@ -24,7 +25,8 @@ class MicrowaveState {
     this.status = MicrowaveStatus.disconnected,
     this.isConnected = false,
     this.isRunning = false,
-    this.currentTemperature = 25,
+    this.currentTemperature = 20.0, // Temperatura ambiente padrão
+    this.calculatedPower = 0, // Potência inicial zero
     this.remainingTime = 0,
     this.currentRecipe,
     this.errorMessage,
@@ -49,7 +51,8 @@ class MicrowaveState {
   factory MicrowaveState.running({
     required Recipe recipe,
     required int remainingTime,
-    required int temperature,
+    required double temperature,
+    required int calculatedPower,
   }) {
     return MicrowaveState(
       status: MicrowaveStatus.running,
@@ -58,6 +61,7 @@ class MicrowaveState {
       currentRecipe: recipe,
       remainingTime: remainingTime,
       currentTemperature: temperature,
+      calculatedPower: calculatedPower,
       lastUpdate: DateTime.now(),
     );
   }
@@ -74,7 +78,8 @@ class MicrowaveState {
     MicrowaveStatus? status,
     bool? isConnected,
     bool? isRunning,
-    int? currentTemperature,
+    double? currentTemperature,
+    int? calculatedPower,
     int? remainingTime,
     Recipe? currentRecipe,
     String? errorMessage,
@@ -85,6 +90,7 @@ class MicrowaveState {
       isConnected: isConnected ?? this.isConnected,
       isRunning: isRunning ?? this.isRunning,
       currentTemperature: currentTemperature ?? this.currentTemperature,
+      calculatedPower: calculatedPower ?? this.calculatedPower,
       remainingTime: remainingTime ?? this.remainingTime,
       currentRecipe: currentRecipe ?? this.currentRecipe,
       errorMessage: errorMessage ?? this.errorMessage,
@@ -95,6 +101,30 @@ class MicrowaveState {
   bool get canStart => isConnected && !isRunning;
   bool get canStop => isConnected && isRunning;
   bool get hasError => errorMessage != null && errorMessage!.isNotEmpty;
+  
+  // Verifica se a potência está dentro da faixa alvo ±2%
+  bool get isPowerInRange {
+    if (currentRecipe == null) return true;
+    int targetPower = _convertPercentToPower(currentRecipe!.power);
+    if (targetPower == 0) return true;
+    
+    double tolerance = 0.02; // 2%
+    double lowerLimit = targetPower * (1 - tolerance);
+    double upperLimit = targetPower * (1 + tolerance);
+    
+    return calculatedPower >= lowerLimit && calculatedPower <= upperLimit;
+  }
+  
+  // Converte porcentagem (0-100) para Watts (0-1000)
+  int _convertPercentToPower(int percent) {
+    return (percent * 10).clamp(0, 1000);
+  }
+  
+  // Potência alvo em Watts
+  int get targetPower {
+    if (currentRecipe == null) return 0;
+    return _convertPercentToPower(currentRecipe!.power);
+  }
   
   String get statusText {
     switch (status) {
@@ -115,6 +145,6 @@ class MicrowaveState {
 
   @override
   String toString() {
-    return 'MicrowaveState(status: $status, connected: $isConnected, running: $isRunning, temp: $currentTemperature°C, time: $remainingTime)';
+    return 'MicrowaveState(status: $status, connected: $isConnected, running: $isRunning, temp: ${currentTemperature.toStringAsFixed(1)}°C, power: ${calculatedPower}W, time: $remainingTime)';
   }
 }

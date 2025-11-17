@@ -81,13 +81,13 @@ class StatusCard extends StatelessWidget {
         _buildStatusItem(
           icon: Icons.thermostat,
           iconColor: Colors.orange,
-          value: TemperatureFormatter.format(state.currentTemperature),
+          value: TemperatureFormatter.format(state.currentTemperature.toInt()),
           label: 'Temperatura',
         ),
         _buildStatusItem(
           icon: Icons.timer,
           iconColor: Colors.blue,
-          value: TimeFormatter.formatTime(state.remainingTime),
+          value: TimeFormatter.formatTime(state.remainingTime.toInt()),
           label: 'Tempo Restante',
         ),
       ],

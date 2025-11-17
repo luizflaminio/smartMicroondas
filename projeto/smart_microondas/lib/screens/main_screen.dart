@@ -5,6 +5,7 @@ import '../models/recipe.dart';
 import '../services/microwave_service.dart';
 import '../widgets/status_card.dart';
 import '../widgets/timer_widget.dart';
+import '../widgets/power_display_widget.dart';
 import 'recipe_list_screen.dart';
 import 'connection_screen.dart';
 import 'debug_screen.dart';
@@ -96,7 +97,7 @@ class _MainScreenState extends State<MainScreen> {
                   builder: (context) => AlertDialog(
                     title: Text('Dispositivo Conectado'),
                     content: Text(
-                      _service.connectedDevice?.name ?? 'ESP32',
+                      _service.connectedDevice?.platformName ?? 'ESP32',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     actions: [
@@ -118,7 +119,7 @@ class _MainScreenState extends State<MainScreen> {
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ Conectado com sucesso!'),
+                    content: Text('Conectado com sucesso!'),
                     backgroundColor: Colors.green,
                   ),
                 );
@@ -130,17 +131,26 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildConnectedView() {
     return Column(
       children: [
-        // Status Card
-        StatusCard(
-          state: _currentState,
-          onDisconnect: _handleDisconnect,
-          onStop: _currentState.isRunning ? _handleStop : null,
+        // Status Card - Padding reduzido
+        Padding(
+          padding: EdgeInsets.fromLTRB(12, 8, 12, 4), // Margens reduzidas
+          child: StatusCard(
+            state: _currentState,
+            onDisconnect: _handleDisconnect,
+            onStop: _currentState.isRunning ? _handleStop : null,
+          ),
         ),
 
-        // Timer (se estiver rodando)
+        // Power Display Widget - Padding reduzido
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4), // Margens reduzidas
+          child: PowerDisplayWidget(state: _currentState),
+        ),
+
+        // Timer (se estiver rodando) - Padding reduzido
         if (_currentState.isRunning && _currentState.currentRecipe != null)
           Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.symmetric(vertical: 8), // Reduzido de 16 para 8
             child: TimerWidget(
               remainingSeconds: _currentState.remainingTime,
               totalSeconds: _currentState.currentRecipe!.timeInSeconds,

@@ -1,36 +1,40 @@
 // lib/utils/constants.dart
-class BLEConstants {
-  // UUIDs matching ESP32
-  static const String serviceUUID = '000000ff-0000-1000-8000-00805f9b34fb';
-  static const String rxCharUUID = '0000ff01-0000-1000-8000-00805f9b34fb'; // Write
-  static const String txCharUUID = '0000ff02-0000-1000-8000-00805f9b34fb'; // Notify
-  
-  // Device name
-  static const String deviceName = 'Smart_Microondas_ESP32';
-  
-  // Timeouts
-  static const Duration scanTimeout = Duration(seconds: 5);
-  static const Duration connectionTimeout = Duration(seconds: 30);
-}
 
-class AppConstants {
-  // App info
-  static const String appName = 'Smart Microondas';
-  static const String appVersion = '1.0.0';
+class BLEConstants {
+  // Device info
+  static const String deviceName = 'Smart_Microondas';
   
-  // Limits
-  static const int maxTemperature = 100;
-  static const int minTemperature = 0;
-  static const int maxTime = 3600; // 1 hour
-  static const int minTime = 10; // 10 seconds
+  // Service and Characteristic UUIDs
+  static const String serviceUUID = '000000ff-0000-1000-8000-00805f9b34fb';
+  static const String rxCharacteristicUUID = '0000ff01-0000-1000-8000-00805f9b34fb';
+  static const String txCharacteristicUUID = '0000ff02-0000-1000-8000-00805f9b34fb';
+  
+  // Connection
+  static const Duration connectionTimeout = Duration(seconds: 10);
+  static const Duration scanTimeout = Duration(seconds: 5);
 }
 
 class Commands {
   static const String ping = 'PING';
   static const String stop = 'STOP';
   static const String status = 'STATUS';
+  static const String getTemp = 'GET_TEMP';
+  static const String relayOn = 'RELAY:ON';
+  static const String relayOff = 'RELAY:OFF';
   
-  static String start(String recipeName, int timeSeconds, int power) {
-    return 'START:$recipeName:$timeSeconds:$power';
+  static String start(String recipeName, int timeInSeconds, int power) {
+    return 'START:$recipeName:$timeInSeconds:$power';
   }
+}
+
+class PowerConstants {
+  // Temperatura
+  static const double tempMin = 20.0; // °C
+  static const double tempMax = 50.0; // °C
+  
+  // Potência
+  static const int powerMax = 1000; // Watts
+  
+  // Controle
+  static const double relayTolerance = 0.02; // 2%
 }
