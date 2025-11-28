@@ -131,6 +131,28 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildConnectedView() {
     return Column(
       children: [
+        // Door warning banner
+        if (_currentState.isDoorOpen)
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(12),
+            color: Colors.red[700],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.warning, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'PORTA ABERTA - Feche a porta para usar o microondas',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         // Status Card - Padding reduzido
         Padding(
           padding: EdgeInsets.fromLTRB(12, 8, 12, 4), // Margens reduzidas
@@ -162,7 +184,7 @@ class _MainScreenState extends State<MainScreen> {
         Expanded(
           child: RecipeListScreen(
             onRecipeSelected: _handleRecipeSelected,
-            isEnabled: !_currentState.isRunning,
+            isEnabled: !_currentState.isRunning && !_currentState.isDoorOpen,
           ),
         ),
       ],

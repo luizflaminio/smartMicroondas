@@ -21,10 +21,11 @@ class BluetoothService {
   BluetoothDevice? _device;
   BluetoothCharacteristic? _rxCharacteristic;
   BluetoothCharacteristic? _txCharacteristic;
-  
+
   // State
   bool _isConnected = false;
   bool _isRunning = false;
+  bool _isDoorOpen = false;
   double _currentTemperature = 20.0;
   int _calculatedPower = 0;
   Recipe? _currentRecipe;
@@ -34,6 +35,7 @@ class BluetoothService {
   // Stream controllers
   final StreamController<bool> _connectionController = StreamController.broadcast();
   final StreamController<bool> _runningController = StreamController.broadcast();
+  final StreamController<bool> _doorController = StreamController.broadcast();
   final StreamController<double> _temperatureController = StreamController.broadcast();
   final StreamController<int> _powerController = StreamController.broadcast();
   final StreamController<int> _timeController = StreamController.broadcast();
@@ -42,6 +44,7 @@ class BluetoothService {
   // Getters for streams
   Stream<bool> get connectionStream => _connectionController.stream;
   Stream<bool> get runningStream => _runningController.stream;
+  Stream<bool> get doorStream => _doorController.stream;
   Stream<double> get temperatureStream => _temperatureController.stream;
   Stream<int> get powerStream => _powerController.stream;
   Stream<int> get timeStream => _timeController.stream;
@@ -50,6 +53,7 @@ class BluetoothService {
   // Getters for current state
   bool get isConnected => _isConnected;
   bool get isRunning => _isRunning;
+  bool get isDoorOpen => _isDoorOpen;
   double get currentTemperature => _currentTemperature;
   int get calculatedPower => _calculatedPower;
   Recipe? get currentRecipe => _currentRecipe;
@@ -59,30 +63,30 @@ class BluetoothService {
   // ============================================================
   // CÁLCULO DE POTÊNCIA BASEADO NA TEMPERATURA
   // ============================================================
-  
+
   /// Calcula potência em Watts baseado na temperatura atual
   /// Usa uma curva quadrática para simular comportamento de microondas real
   int _calculatePowerFromTemperature(double temperature) {
     // Garante que temperatura está dentro dos limites
     if (temperature <= TEMP_MIN) return 0;
     if (temperature >= TEMP_MAX) return MAX_POWER;
-    
+
     // Normaliza temperatura para 0-1
     double normalizedTemp = (temperature - TEMP_MIN) / (TEMP_MAX - TEMP_MIN);
-    
+
     // Aplica curva quadrática (simula aquecimento não-linear do microondas)
     double powerFactor = normalizedTemp * normalizedTemp;
-    
+
     return (powerFactor * MAX_POWER).round();
   }
 
   /// Determina se o relé deve estar ligado baseado na potência calculada vs alvo
   bool _shouldRelayBeOn(int calculatedPower, int targetPower) {
     if (targetPower == 0) return false;
-    
+
     double lowerLimit = targetPower * (1 - RELAY_TOLERANCE); // -2%
     double upperLimit = targetPower * (1 + RELAY_TOLERANCE); // +2%
-    
+
     // Relé LIGA se potência está ABAIXO do alvo (precisa aquecer mais)
     // Relé DESLIGA se potência está DENTRO ou ACIMA do alvo
     return calculatedPower < lowerLimit;
@@ -103,7 +107,7 @@ class BluetoothService {
 
     // Calcula potência baseada na temperatura
     int newCalculatedPower = _calculatePowerFromTemperature(temperature);
-    
+
     if (_calculatedPower != newCalculatedPower) {
       _calculatedPower = newCalculatedPower;
       _powerController.add(_calculatedPower);
@@ -113,12 +117,12 @@ class BluetoothService {
     if (_isRunning && _currentRecipe != null) {
       int targetPower = _convertPercentToPower(_currentRecipe!.power);
       bool shouldBeOn = _shouldRelayBeOn(_calculatedPower, targetPower);
-      
+
       // Só envia comando se o estado mudou
       if (shouldBeOn != _relayState) {
         _relayState = shouldBeOn;
         await _sendCommand(shouldBeOn ? 'RELAY:ON' : 'RELAY:OFF');
-        
+
         print('🌡️  Temp: ${temperature.toStringAsFixed(1)}°C | '
               '⚡ Potência: $_calculatedPower W | '
               '🎯 Alvo: $targetPower W | '
@@ -185,55 +189,55 @@ class BluetoothService {
   Future<bool> connectToDevice(BluetoothDevice device) async {
     try {
       print('🔗 Connecting to ${device.platformName}...');
-      
+
       await device.connect(timeout: BLEConstants.connectionTimeout);
       _device = device;
-      
+
       // Discover services
       List<dynamic> services = await device.discoverServices();
-      
+
       for (var service in services) {
         String serviceUuid = service.uuid.toString().toLowerCase();
-        
+
         if (serviceUuid.contains('00ff')) {
           print('✅ Found Microwave Service');
-          
+
           for (var char in service.characteristics) {
             String charUuid = char.uuid.toString().toLowerCase();
-            
+
             if (charUuid.contains('ff01')) {
               _rxCharacteristic = char;
               print('✅ RX Characteristic found');
             } else if (charUuid.contains('ff02')) {
               _txCharacteristic = char;
-              
+
               await char.setNotifyValue(true);
-              
+
               char.lastValueStream.listen((value) {
                 if (value.isNotEmpty) {
                   String message = utf8.decode(value);
                   _handleReceivedMessage(message);
                 }
               });
-              
+
               print('✅ TX Characteristic found and subscribed');
             }
           }
         }
       }
-      
+
       if (_rxCharacteristic == null || _txCharacteristic == null) {
         throw Exception('Characteristics not found');
       }
-      
+
       _isConnected = true;
       _connectionController.add(_isConnected);
-      
+
       print('✅ Connected successfully!');
-      
+
       await Future.delayed(Duration(milliseconds: 500));
       _sendCommand(Commands.ping);
-      
+
       return true;
     } catch (e) {
       print('❌ Connection error: $e');
@@ -259,10 +263,10 @@ class BluetoothService {
 
     print('🔍 Scanning for microwave...');
     List<BluetoothDevice> devices = await scanDevices();
-    
+
     BluetoothDevice? microwave;
     for (var device in devices) {
-      if (device.platformName.contains('Smart_Microondas') || 
+      if (device.platformName.contains('Smart_Microondas') ||
           device.platformName.contains(BLEConstants.deviceName)) {
         microwave = device;
         break;
@@ -282,19 +286,19 @@ class BluetoothService {
     if (_device != null) {
       await _device!.disconnect();
     }
-    
+
     _device = null;
     _rxCharacteristic = null;
     _txCharacteristic = null;
     _isConnected = false;
     _relayState = false;
     _connectionController.add(_isConnected);
-    
+
     if (_isRunning) {
       _isRunning = false;
       _runningController.add(_isRunning);
     }
-    
+
     print('🔌 Disconnected');
   }
 
@@ -316,10 +320,10 @@ class BluetoothService {
   // Handle received messages
   void _handleReceivedMessage(String message) {
     print('📥 Received: $message');
-    
+
     if (message == 'PONG') {
       _messageController.add('Connection OK');
-    } 
+    }
     else if (message == 'CONNECTED') {
       _messageController.add('Connected to microwave');
     }
@@ -339,7 +343,7 @@ class BluetoothService {
     }
     else if (message.startsWith('STATUS:')) {
       _parseStatus(message);
-    } 
+    }
     else if (message.startsWith('OK:')) {
       _messageController.add('Command acknowledged');
     }
@@ -354,25 +358,38 @@ class BluetoothService {
   // Parse status
   void _parseStatus(String status) {
     List<String> parts = status.split(':');
-    
+
+    // STATUS format: STATUS:isRunning:temp:time:recipe:power:doorOpen
     if (parts.length >= 6) {
       bool running = parts[1] == '1';
       int time = int.tryParse(parts[3]) ?? 0;
-      
+
+      // Parse door state if available (parts[6])
+      bool doorOpen = false;
+      if (parts.length >= 7) {
+        doorOpen = parts[6] == '1';
+      }
+
       if (_isRunning != running) {
         _isRunning = running;
         _runningController.add(_isRunning);
-        
+
         // Se parou de rodar, desliga relé
         if (!running && _relayState) {
           _relayState = false;
           _sendCommand('RELAY:OFF');
         }
       }
-      
+
       if (_remainingTime != time) {
         _remainingTime = time;
         _timeController.add(_remainingTime);
+      }
+
+      if (_isDoorOpen != doorOpen) {
+        _isDoorOpen = doorOpen;
+        _doorController.add(_isDoorOpen);
+        print('🚪 Door ${doorOpen ? "OPEN" : "CLOSED"}');
       }
     }
   }
@@ -383,23 +400,23 @@ class BluetoothService {
 
     _currentRecipe = recipe;
     _remainingTime = recipe.timeInSeconds;
-    
+
     String command = Commands.start(recipe.name, recipe.timeInSeconds, recipe.power);
     await _sendCommand(command);
-    
+
     print('🍽️ Starting recipe: ${recipe.name}');
   }
 
   // Stop microwave
   Future<void> stopMicrowave() async {
     if (!_isConnected) return;
-    
+
     // Desliga o relé antes de parar
     if (_relayState) {
       await _sendCommand('RELAY:OFF');
       _relayState = false;
     }
-    
+
     await _sendCommand(Commands.stop);
     print('⏹️ Stopping microwave');
   }
@@ -415,6 +432,7 @@ class BluetoothService {
     _device?.disconnect();
     _connectionController.close();
     _runningController.close();
+    _doorController.close();
     _temperatureController.close();
     _powerController.close();
     _timeController.close();
