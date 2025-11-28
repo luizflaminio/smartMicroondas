@@ -11,7 +11,7 @@
 // Pinos
 #define LED_PIN 2
 #define RELAY_PIN 23  // AJUSTE ESTE PINO CONFORME SEU HARDWARE!
-#define DOOR_SENSOR_PIN 4
+#define DOOR_SENSOR_PIN 4   // Sensor de porta (micro switch)
 
 // Pinos MAX6675
 #define PIN_CLK 18
@@ -36,6 +36,9 @@ bool isDoorOpen = false;
 // Variaveis para envio automatico de temperatura
 unsigned long lastTempSend = 0;
 const unsigned long TEMP_INTERVAL = 2000; // Enviar temperatura a cada 2 segundos
+
+// Controle de tentativa de inicio
+bool waitingToStart = false;
 
 void processCommand(String command);
 uint16_t readRaw16();
@@ -202,22 +205,45 @@ void processCommand(String command) {
     Serial.println("Tempo: " + String(targetTime) + "s");
     Serial.println("Potencia: " + String(powerLevel) + "%");
 
+    // Verificar se a porta está aberta
+    if (isDoorOpen) {
+      Serial.println("AVISO: Porta aberta! Aguardando fechamento...");
+      waitingToStart = true;
+      pTxCharacteristic->setValue("ERROR:DOOR_OPEN");
+      pTxCharacteristic->notify();
+      return;
+    }
+
     isRunning = true;
     startTime = millis();
     digitalWrite(LED_PIN, HIGH);
 
     float currentTemp = readTemperature();
-    String response = "STATUS:1:" + String(currentTemp, 1) + ":" + timeStr + ":" + currentRecipe + ":" + powerStr;
+    // CORRIGIDO: Adicionado status da porta no final
+    String response = "STATUS:1:" + String(currentTemp, 1) + ":" + timeStr + ":" + currentRecipe + ":" + powerStr + ":" + (isDoorOpen ? "1" : "0");
 
     pTxCharacteristic->setValue(response.c_str());
     pTxCharacteristic->notify();
   }
   else if (command == "STOP") {
-    Serial.println("-> STOP");
+    Serial.println("-> STOP - Resetando tudo");
+    
+    // Para tudo
     isRunning = false;
-    setRelay(false); // Desliga rele ao parar
+    waitingToStart = false;
+    setRelay(false);
     digitalWrite(LED_PIN, LOW);
-    pTxCharacteristic->setValue("STATUS:0:25:0::0");
+    
+    // Reseta variáveis
+    startTime = 0;
+    targetTime = 0;
+    powerLevel = 0;
+    currentRecipe = "";
+    
+    Serial.println("Sistema resetado e pronto para nova receita");
+    
+    // CORRIGIDO: Adicionado status da porta no final
+    pTxCharacteristic->setValue("STATUS:0:25:0::0:0");
     pTxCharacteristic->notify();
   }
   else if (command == "STATUS") {
@@ -228,10 +254,12 @@ void processCommand(String command) {
       if (remaining < 0) remaining = 0;
 
       float currentTemp = readTemperature();
-      String response = "STATUS:1:" + String(currentTemp, 1) + ":" + String(remaining) + ":" + currentRecipe + ":" + String(powerLevel);
+      // CORRIGIDO: Adicionado status da porta no final
+      String response = "STATUS:1:" + String(currentTemp, 1) + ":" + String(remaining) + ":" + currentRecipe + ":" + String(powerLevel) + ":" + (isDoorOpen ? "1" : "0");
       pTxCharacteristic->setValue(response.c_str());
     } else {
-      pTxCharacteristic->setValue("STATUS:0:25:0::0");
+      // CORRIGIDO: Adicionado status da porta no final
+      pTxCharacteristic->setValue("STATUS:0:25:0::0:0");
     }
     pTxCharacteristic->notify();
   }
@@ -274,7 +302,9 @@ void setup() {
 
   // Configurar Sensor de Porta
   pinMode(DOOR_SENSOR_PIN, INPUT_PULLUP);
-  Serial.println("[OK] Sensor de porta configurado");
+  Serial.print("[OK] Sensor de porta configurado (Pino ");
+  Serial.print(DOOR_SENSOR_PIN);
+  Serial.println(")");
 
   // Configurar MAX6675
   pinMode(PIN_CLK, OUTPUT);
@@ -352,14 +382,53 @@ void loop() {
       if (temp != -999.0) {
         Serial.print("[TEMP] ");
         Serial.print(temp, 2);
-        Serial.println(" graus C");
+        Serial.print(" graus C | Porta: ");
+        Serial.println(isDoorOpen ? "ABERTA" : "FECHADA");
       }
     } else {
       Serial.println("[STATUS] Aguardando conexao...");
     }
   }
 
+  // CORRIGIDO: Leitura correta do sensor de porta
+  bool previousDoorState = isDoorOpen;
   isDoorOpen = digitalRead(DOOR_SENSOR_PIN) == HIGH;
+
+  // Se a porta mudou de estado, notificar o app
+  if (deviceConnected && previousDoorState != isDoorOpen) {
+    Serial.print("PORTA MUDOU: ");
+    Serial.println(isDoorOpen ? "ABERTA" : "FECHADA");
+    
+    // Enviar status atualizado
+    if (isRunning) {
+      int elapsed = (millis() - startTime) / 1000;
+      int remaining = targetTime - elapsed;
+      if (remaining < 0) remaining = 0;
+      float currentTemp = readTemperature();
+      String response = "STATUS:1:" + String(currentTemp, 1) + ":" + String(remaining) + ":" + currentRecipe + ":" + String(powerLevel) + ":" + (isDoorOpen ? "1" : "0");
+      pTxCharacteristic->setValue(response.c_str());
+      pTxCharacteristic->notify();
+    } else {
+      String response = "STATUS:0:25:0::0:" + String(isDoorOpen ? "1" : "0");
+      pTxCharacteristic->setValue(response.c_str());
+      pTxCharacteristic->notify();
+    }
+  }
+
+  // Se estava aguardando para iniciar e a porta fechou, iniciar automaticamente
+  if (waitingToStart && !isDoorOpen) {
+    Serial.println("PORTA FECHADA! Iniciando receita automaticamente...");
+    waitingToStart = false;
+    
+    isRunning = true;
+    startTime = millis();
+    digitalWrite(LED_PIN, HIGH);
+    
+    float currentTemp = readTemperature();
+    String response = "STATUS:1:" + String(currentTemp, 1) + ":" + String(targetTime) + ":" + currentRecipe + ":" + String(powerLevel) + ":0";
+    pTxCharacteristic->setValue(response.c_str());
+    pTxCharacteristic->notify();
+  }
 
   if (isDoorOpen && isRunning) {
     Serial.println("!!! PORTA ABERTA - PARANDO MICROONDAS !!!");
@@ -384,9 +453,12 @@ void loop() {
       if (remaining < 0) remaining = 0;
 
       float currentTemp = readTemperature();
-      String response = "STATUS:1:" + String(currentTemp, 1) + ":" + String(remaining) + ":" + currentRecipe + ":" + String(powerLevel);
+      // CORRIGIDO: Adicionado status da porta no final
+      String response = "STATUS:1:" + String(currentTemp, 1) + ":" + String(remaining) + ":" + currentRecipe + ":" + String(powerLevel) + ":" + (isDoorOpen ? "1" : "0");
       pTxCharacteristic->setValue(response.c_str());
       pTxCharacteristic->notify();
+      Serial.print("Enviado STATUS: ");
+      Serial.println(response);
     }
     // Verificar se o tempo acabou
     int elapsed = (millis() - startTime) / 1000;
