@@ -11,6 +11,7 @@
 // Pinos
 #define LED_PIN 2
 #define RELAY_PIN 23  // AJUSTE ESTE PINO CONFORME SEU HARDWARE!
+#define DOOR_SENSOR_PIN 4
 
 // Pinos MAX6675
 #define PIN_CLK 18
@@ -29,6 +30,9 @@ String currentRecipe = "";
 // Controle do rele
 bool relayState = false;
 
+// Controle da porta
+bool isDoorOpen = false;
+
 // Variaveis para envio automatico de temperatura
 unsigned long lastTempSend = 0;
 const unsigned long TEMP_INTERVAL = 2000; // Enviar temperatura a cada 2 segundos
@@ -42,14 +46,14 @@ class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       deviceConnected = true;
       Serial.println("=== CLIENTE CONECTADO ===");
-      
+
       for(int i = 0; i < 3; i++) {
         digitalWrite(LED_PIN, HIGH);
         delay(100);
         digitalWrite(LED_PIN, LOW);
         delay(100);
       }
-      
+
       delay(500);
       pTxCharacteristic->setValue("CONNECTED");
       pTxCharacteristic->notify();
@@ -81,6 +85,15 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 // CONTROLE DO RELE
 // ============================================================
 void setRelay(bool state) {
+  if (state && isDoorOpen) {
+      Serial.println("ERRO: Nao pode ligar - porta aberta!");
+      pTxCharacteristic->setValue("ERROR:DOOR_OPEN");
+      pTxCharacteristic->notify();
+      relayState = false;
+      digitalWrite(RELAY_PIN, LOW);
+      return;
+  }
+
   relayState = state;
   digitalWrite(RELAY_PIN, state ? HIGH : LOW);
   Serial.print("RELE: ");
@@ -109,13 +122,13 @@ uint16_t readRaw16() {
 
 float readTemperature() {
   uint16_t raw = readRaw16();
-  
+
   // Verificar se ha falha (bit 2 = 1 indica termopar desconectado)
   if (raw & 0x4) {
     Serial.println("ERRO - Termopar desconectado!");
     return -999.0; // Valor de erro
   }
-  
+
   // Calcular temperatura (bits 14-3, resolucao de 0.25 graus C)
   float tempC = (raw >> 3) * 0.25;
   return tempC;
@@ -123,7 +136,7 @@ float readTemperature() {
 
 void sendTemperature() {
   float temp = readTemperature();
-  
+
   if (temp == -999.0) {
     // Erro de leitura
     pTxCharacteristic->setValue("TEMP:ERROR");
@@ -147,7 +160,7 @@ void processCommand(String command) {
   Serial.print("Processando: [");
   Serial.print(command);
   Serial.println("]");
-  
+
   if (command == "PING") {
     Serial.println("-> PONG");
     pTxCharacteristic->setValue("PONG");
@@ -177,22 +190,22 @@ void processCommand(String command) {
     Serial.println("-> START recebido");
     int firstColon = command.indexOf(':', 6);
     int secondColon = command.indexOf(':', firstColon + 1);
-    
+
     currentRecipe = command.substring(6, firstColon);
     String timeStr = command.substring(firstColon + 1, secondColon);
     String powerStr = command.substring(secondColon + 1);
-    
+
     targetTime = timeStr.toInt();
     powerLevel = powerStr.toInt();
-    
+
     Serial.println("Receita: " + currentRecipe);
     Serial.println("Tempo: " + String(targetTime) + "s");
     Serial.println("Potencia: " + String(powerLevel) + "%");
-    
+
     isRunning = true;
     startTime = millis();
     digitalWrite(LED_PIN, HIGH);
-    
+
     float currentTemp = readTemperature();
     String response = "STATUS:1:" + String(currentTemp, 1) + ":" + timeStr + ":" + currentRecipe + ":" + powerStr;
 
@@ -234,13 +247,13 @@ void processCommand(String command) {
 // ============================================================
 void setup() {
   Serial.begin(115200);
-  
+
   // Aguardar serial estabilizar
   while(!Serial) {
     delay(10);
   }
   delay(1000);
-  
+
   Serial.println("");
   Serial.println("========================================");
   Serial.println("SMART MICROONDAS ESP32 + MAX6675 v2.0");
@@ -258,6 +271,10 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   Serial.println("[OK] LED configurado");
+
+  // Configurar Sensor de Porta
+  pinMode(DOOR_SENSOR_PIN, INPUT_PULLUP);
+  Serial.println("[OK] Sensor de porta configurado");
 
   // Configurar MAX6675
   pinMode(PIN_CLK, OUTPUT);
@@ -312,7 +329,7 @@ void setup() {
   pAdvertising->setScanResponse(false);
   pAdvertising->setMinPreferred(0x0);
   BLEDevice::startAdvertising();
-  
+
   Serial.println("========================================");
   Serial.println("BLE + MAX6675 + RELE PRONTO!");
   Serial.println("Nome: Smart_Microondas_ESP32");
@@ -326,7 +343,7 @@ void setup() {
 void loop() {
   static unsigned long lastPrint = 0;
   static unsigned long lastStatusSend = 0;
-  
+
   // Status geral a cada 5 segundos
   if (millis() - lastPrint > 5000) {
     lastPrint = millis();
@@ -342,6 +359,17 @@ void loop() {
     }
   }
 
+  isDoorOpen = digitalRead(DOOR_SENSOR_PIN) == HIGH;
+
+  if (isDoorOpen && isRunning) {
+    Serial.println("!!! PORTA ABERTA - PARANDO MICROONDAS !!!");
+    isRunning = false;
+    setRelay(false);
+    digitalWrite(LED_PIN, LOW);
+    pTxCharacteristic->setValue("ERROR:DOOR_OPENED");
+    pTxCharacteristic->notify();
+  }
+
   // Enviar temperatura automaticamente quando conectado e rodando
   if (deviceConnected && isRunning) {
     if (millis() - lastTempSend > TEMP_INTERVAL) {
@@ -350,11 +378,11 @@ void loop() {
     }
     if (millis() - lastStatusSend > 1000) {
       lastStatusSend = millis();
-      
+
       int elapsed = (millis() - startTime) / 1000;
       int remaining = targetTime - elapsed;
       if (remaining < 0) remaining = 0;
-      
+
       float currentTemp = readTemperature();
       String response = "STATUS:1:" + String(currentTemp, 1) + ":" + String(remaining) + ":" + currentRecipe + ":" + String(powerLevel);
       pTxCharacteristic->setValue(response.c_str());
@@ -371,6 +399,7 @@ void loop() {
       pTxCharacteristic->notify();
     }
   }
-  
+
+
   delay(100);
 }

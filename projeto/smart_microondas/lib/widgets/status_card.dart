@@ -25,12 +25,12 @@ class StatusCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildConnectionStatus(context),
-            
+
             if (state.isConnected) ...[
               Divider(height: 32),
               _buildStatusInfo(context),
             ],
-            
+
             if (state.isRunning && state.currentRecipe != null) ...[
               Divider(height: 32),
               _buildCurrentRecipe(context),
@@ -85,6 +85,12 @@ class StatusCard extends StatelessWidget {
           label: 'Temperatura',
         ),
         _buildStatusItem(
+          icon: state.isDoorOpen ? Icons.door_front_door : Icons.door_front_door_outlined,
+          iconColor: state.isDoorOpen ? Colors.red : Colors.green,
+          value: state.isDoorOpen ? 'ABERTA' : 'FECHADA',
+          label: 'Porta',
+        ),
+        _buildStatusItem(
           icon: Icons.timer,
           iconColor: Colors.blue,
           value: TimeFormatter.formatTime(state.remainingTime.toInt()),
@@ -132,7 +138,7 @@ class StatusCard extends StatelessWidget {
 
   Widget _buildCurrentRecipe(BuildContext context) {
     final recipe = state.currentRecipe!;
-    
+
     return Column(
       children: [
         Text(

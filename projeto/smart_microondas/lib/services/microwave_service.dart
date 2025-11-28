@@ -12,13 +12,13 @@ class MicrowaveService {
   }
 
   final BluetoothService _bluetooth = BluetoothService();
-  
+
   // State stream
-  final StreamController<MicrowaveState> _stateController = 
+  final StreamController<MicrowaveState> _stateController =
       StreamController<MicrowaveState>.broadcast();
-  
+
   Stream<MicrowaveState> get stateStream => _stateController.stream;
-  
+
   MicrowaveState _currentState = MicrowaveState.initial();
   MicrowaveState get currentState => _currentState;
 
@@ -43,6 +43,13 @@ class MicrowaveService {
       ));
     });
 
+    // Listen to door state changes
+    _bluetooth.doorStream.listen((isDoorOpen) {
+      _updateState(_currentState.copyWith(
+        isDoorOpen: isDoorOpen,
+      ));
+    });
+
     // Listen to temperature changes
     _bluetooth.temperatureStream.listen((temperature) {
       _updateState(_currentState.copyWith(
@@ -62,7 +69,7 @@ class MicrowaveService {
       _updateState(_currentState.copyWith(
         remainingTime: time,
       ));
-      
+
       // Check if finished
       if (_currentState.isRunning && time == 0) {
         _updateState(_currentState.copyWith(
@@ -96,7 +103,7 @@ class MicrowaveService {
     _updateState(_currentState.copyWith(
       status: MicrowaveStatus.connecting,
     ));
-    
+
     return await _bluetooth.scanDevices();
   }
 
@@ -104,13 +111,13 @@ class MicrowaveService {
     _updateState(_currentState.copyWith(
       status: MicrowaveStatus.connecting,
     ));
-    
+
     bool success = await _bluetooth.connectToMicrowave();
-    
+
     if (!success) {
       _updateState(MicrowaveState.error('Failed to connect'));
     }
-    
+
     return success;
   }
 
@@ -118,13 +125,13 @@ class MicrowaveService {
     _updateState(_currentState.copyWith(
       status: MicrowaveStatus.connecting,
     ));
-    
+
     bool success = await _bluetooth.connectToDevice(device);
-    
+
     if (!success) {
       _updateState(MicrowaveState.error('Failed to connect'));
     }
-    
+
     return success;
   }
 
@@ -156,7 +163,7 @@ class MicrowaveService {
     }
 
     await _bluetooth.stopMicrowave();
-    
+
     _updateState(_currentState.copyWith(
       status: MicrowaveStatus.connected,
       isRunning: false,
@@ -171,6 +178,7 @@ class MicrowaveService {
   // Getters delegating to bluetooth service
   bool get isConnected => _bluetooth.isConnected;
   bool get isRunning => _bluetooth.isRunning;
+  bool get isDoorOpen => _bluetooth.isDoorOpen;
   double get currentTemperature => _bluetooth.currentTemperature;
   int get calculatedPower => _bluetooth.calculatedPower;
   Recipe? get currentRecipe => _bluetooth.currentRecipe;
